@@ -52,6 +52,11 @@ class MyFrameMain: public FrameMain
   int  show_seamless;
   bool show_1to1;
 
+  // last known non-maximized, non-iconized window geometry, kept up to
+  // date via onMove()/onSize() so it can be persisted on exit even if
+  // the window happens to be maximized at that point
+  wxRect normal_geometry;
+
   // log window
   MyFrameLog* logwindow;
 
@@ -111,6 +116,7 @@ class MyFrameMain: public FrameMain
   void onFullScreenChanged(wxFullScreenEvent &event);
   void onSysColourChanged(wxSysColourChangedEvent& event);
   void onSize(wxSizeEvent& event);
+  void onMove(wxMoveEvent& event);
 
   bool saveStats(VNCConn* c, int conn_index, const wxArrayString& stats, wxString desc, bool autosave);
 

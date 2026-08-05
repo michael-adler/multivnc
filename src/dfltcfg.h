@@ -45,6 +45,12 @@
 #define V_SIZE_X 1024
 #define K_SIZE_Y _T("SizeY")
 #define V_SIZE_Y 768
+#define K_POS_X _T("PosX")
+#define V_POS_X wxDefaultCoord
+#define K_POS_Y _T("PosY")
+#define V_POS_Y wxDefaultCoord
+#define K_MAXIMIZED _T("Maximized")
+#define V_MAXIMIZED false
 
 // connection settings
 #define K_MULTICAST wxT("MulticastVNC")

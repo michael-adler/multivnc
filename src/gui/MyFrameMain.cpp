@@ -8,6 +8,7 @@
 #include <wx/textctrl.h>
 #include <wx/creddlg.h>
 #include <wx/socket.h>
+#include <wx/display.h>
 #include <wx/clipbrd.h>
 #include <wx/imaglist.h>
 #include <wx/richmsgdlg.h>
@@ -56,6 +57,7 @@ BEGIN_EVENT_TABLE(MyFrameMain, FrameMain)
   EVT_FULLSCREEN (MyFrameMain::onFullScreenChanged)
   EVT_SYS_COLOUR_CHANGED(MyFrameMain::onSysColourChanged)
   EVT_SIZE(MyFrameMain::onSize)
+  EVT_MOVE(MyFrameMain::onMove)
 END_EVENT_TABLE()
 
 
@@ -69,8 +71,8 @@ MyFrameMain::MyFrameMain(wxWindow* parent, int id, const wxString& title,
 			 long style):
   FrameMain(parent, id, title, pos, size, style)	
 {
-  int x,y;
-  bool grab_keyboard;
+  int width, height, pos_x, pos_y;
+  bool grab_keyboard, maximized;
   // get default config object, created on demand if not exist
   wxConfigBase *pConfig = wxConfigBase::Get();
   pConfig->Read(K_SHOWTOOLBAR, &show_toolbar, V_SHOWTOOLBAR);
@@ -81,8 +83,11 @@ MyFrameMain::MyFrameMain(wxWindow* parent, int id, const wxString& title,
   pConfig->Read(K_SHOWSEAMLESS, &show_seamless, V_SHOWSEAMLESS);
   pConfig->Read(K_SHOW1TO1, &show_1to1, V_SHOW1TO1);
   pConfig->Read(K_GRABKEYBOARD, &grab_keyboard, V_GRABKEYBOARD);
-  pConfig->Read(K_SIZE_X, &x, V_SIZE_X);
-  pConfig->Read(K_SIZE_Y, &y, V_SIZE_Y);
+  pConfig->Read(K_SIZE_X, &width, V_SIZE_X);
+  pConfig->Read(K_SIZE_Y, &height, V_SIZE_Y);
+  pConfig->Read(K_POS_X, &pos_x, V_POS_X);
+  pConfig->Read(K_POS_Y, &pos_y, V_POS_Y);
+  pConfig->Read(K_MAXIMIZED, &maximized, V_MAXIMIZED);
 
   bool do_log;
   pConfig->Read(K_LOGSAVETOFILE, &do_log, V_LOGSAVETOFILE);
@@ -105,13 +110,57 @@ MyFrameMain::MyFrameMain(wxWindow* parent, int id, const wxString& title,
 #endif
 
 
-  // window size
+  // window geometry
   show_fullscreen = false;
   SetMinSize(wxSize(640, 480));
   splitwin_main->SetMinimumPaneSize(160);
   splitwin_left->SetMinimumPaneSize(250);
-  SetSize(x, y);
+  // only honour the saved position if it still lands on a currently
+  // connected display -- monitor setups change (esp. laptops being
+  // undocked), and blindly restoring an off-screen position would leave
+  // the window unreachable
+  if(pos_x == wxDefaultCoord || pos_y == wxDefaultCoord) {
+      // no saved position, let the OS pick one
+  } else {
+      int display_index = wxDisplay::GetFromPoint(wxPoint(pos_x, pos_y));
+      if(display_index == wxNOT_FOUND) {
+          pos_x = wxDefaultCoord;
+          pos_y = wxDefaultCoord;
+      } else {
+          // The top-left corner is on screen, but the display may have
+          // shrunk. Clamp width/height to fit, then slide the position
+          // so the whole window stays on screen.
+          wxRect area = wxDisplay(display_index).GetClientArea();
+          if(width > area.GetWidth())
+              width = area.GetWidth();
+          if(height > area.GetHeight())
+              height = area.GetHeight();
+          if(pos_x + width - 1 > area.GetRight())
+              pos_x = area.GetRight() - width + 1;
+          if(pos_x < area.GetLeft())
+              pos_x = area.GetLeft();
+          if(pos_y + height - 1 > area.GetBottom())
+              pos_y = area.GetBottom() - height + 1;
+          if(pos_y < area.GetTop())
+              pos_y = area.GetTop();
+      }
+  }
+  SetSize(pos_x, pos_y, width, height);
+  normal_geometry = GetRect();
   EnableFullScreenView();
+  if(maximized) {
+      Maximize(true);
+  } else {
+      // re-apply the size once the window has actually been shown and
+      // laid out: at this point in the constructor the frame's chrome
+      // (toolbar/status bar/unified title bar) isn't necessarily accounted
+      // for yet on all platforms, so the height set just above can come
+      // out a bit short of what was asked for
+      CallAfter([this, width, height]() {
+          SetSize(width, height);
+          normal_geometry = GetRect();
+      });
+  }
 
 
   // assign images to notebook_connections
@@ -231,10 +280,15 @@ MyFrameMain::MyFrameMain(wxWindow* parent, int id, const wxString& title,
 MyFrameMain::~MyFrameMain()
 {
   wxConfigBase *pConfig = wxConfigBase::Get();
-  int x,y;
-  GetSize(&x, &y);
-  pConfig->Write(K_SIZE_X, x);
-  pConfig->Write(K_SIZE_Y, y);
+  // save the last known non-maximized, non-iconized geometry -- GetSize()/
+  // GetPosition() would report the maximized geometry if the window
+  // happens to be maximized right now, which is not what we want to
+  // restore as the normal window size next time
+  pConfig->Write(K_SIZE_X, normal_geometry.GetWidth());
+  pConfig->Write(K_SIZE_Y, normal_geometry.GetHeight());
+  pConfig->Write(K_POS_X, normal_geometry.GetX());
+  pConfig->Write(K_POS_Y, normal_geometry.GetY());
+  pConfig->Write(K_MAXIMIZED, IsMaximized());
   pConfig->Write(K_GRABKEYBOARD, frame_main_toolbar->GetToolState(ID_GRABKEYBOARD));
 
   // this has to be from end to start in order for stats autosave to assign right connection numbers!
@@ -821,6 +875,9 @@ void MyFrameMain::onSysColourChanged(wxSysColourChangedEvent& event)
 
 void MyFrameMain::onSize(wxSizeEvent& event)
 {
+  if(!IsMaximized() && !IsIconized())
+      normal_geometry.SetSize(GetSize());
+
 #ifdef __WXMAC__
     // Force proper layout calculation by temporarily adjusting sash positions
     // This mimics what happens when user manually moves the sash
@@ -839,6 +896,15 @@ void MyFrameMain::onSize(wxSizeEvent& event)
     });
 #endif
     event.Skip(); // Allow the event to propagate
+}
+
+
+void MyFrameMain::onMove(wxMoveEvent& event)
+{
+  if(!IsMaximized() && !IsIconized())
+      normal_geometry.SetPosition(GetPosition());
+
+  event.Skip(); // Allow the event to propagate
 }
 
 
