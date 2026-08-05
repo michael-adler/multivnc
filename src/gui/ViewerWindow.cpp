@@ -563,35 +563,31 @@ void ViewerWindow::adjustCanvasSize()
             /*
               calculate scale factor
              */
+            // disable scroll bars and let the sizer settle first, so that
+            // canvas_container's client size below reflects the space
+            // actually available to the canvas (i.e. already excludes
+            // ViewerWindow's own sizer border and the stats panel)
+            canvas_container->SetScrollRate(0, 0);
+            Layout();
+
+            wxSize avail = canvas_container->GetClientSize();
+
             wxLogDebug("ViewerWindow %p: adjustCanvasSize: framebuffer is %d x %d",
                        this,
                        canvas->conn->getFrameBufferWidth(),
                        canvas->conn->getFrameBufferHeight());
-            wxLogDebug("ViewerWindow %p: adjustCanvasSize: window      is %d x %d",
+            wxLogDebug("ViewerWindow %p: adjustCanvasSize: available   is %d x %d",
                        this,
-                       GetSize().GetWidth(),
-                       GetSize().GetHeight());
+                       avail.GetWidth(),
+                       avail.GetHeight());
 
-            float width_factor = GetSize().GetWidth() / (float)canvas->conn->getFrameBufferWidth();
-
-            // stats shown?
-            int stats_height = 0;
-            if(GetSizer()->IsShown(1)) {
-                // compute correct size for initial case
-                Layout();
-                stats_height = stats_container->GetSize().GetHeight();
-            }
-            float height_factor = (GetSize().GetHeight() - stats_height) / (float)canvas->conn->getFrameBufferHeight();
+            float width_factor = avail.GetWidth() / (float)canvas->conn->getFrameBufferWidth();
+            float height_factor = avail.GetHeight() / (float)canvas->conn->getFrameBufferHeight();
 
             wxLogDebug("ViewerWindow %p: adjustCanvasSize: width factor is %f", this, width_factor);
             wxLogDebug("ViewerWindow %p: adjustCanvasSize: height factor is %f", this, height_factor);
 
             canvas->scale_factor = wxMin(width_factor, height_factor);
-
-            /*
-              and disable scroll bars
-             */
-            canvas_container->SetScrollRate(0, 0);
         }
         wxSize dimensions(canvas->conn->getFrameBufferWidth() * canvas->scale_factor,
                           canvas->conn->getFrameBufferHeight() * canvas->scale_factor);
