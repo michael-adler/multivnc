@@ -290,6 +290,10 @@ MyFrameMain::~MyFrameMain()
   pConfig->Write(K_POS_Y, normal_geometry.GetY());
   pConfig->Write(K_MAXIMIZED, IsMaximized());
   pConfig->Write(K_GRABKEYBOARD, frame_main_toolbar->GetToolState(ID_GRABKEYBOARD));
+  // flush to disk now, before the teardown below (which involves joining
+  // service discovery threads and has been a crash site) gets a chance
+  // to take the process down before wxApp::OnExit() ever runs
+  pConfig->Flush();
 
   // this has to be from end to start in order for stats autosave to assign right connection numbers!
   for(int i = connections.size()-1; i >= 0; --i)
@@ -2461,6 +2465,7 @@ void MyFrameMain::bookmarks_add(wxCommandEvent &event)
 
       //reset path
       cfg->SetPath(wxT("/"));
+      cfg->Flush();
 
       // and load into listbox
       bookmarks_load_to_list();
@@ -2497,6 +2502,7 @@ void MyFrameMain::bookmarks_edit(wxCommandEvent &event)
   cfg->SetPath(wxT("/"));
 
   bookmarks_secrets_save(newname, password, sshPassword, sshPrivKeyPassword);
+  cfg->Flush();
 
   // and load into listbox
   bookmarks_load_to_list();
@@ -2519,6 +2525,8 @@ void MyFrameMain::bookmarks_delete(wxCommandEvent &event)
   wxConfigBase *cfg = wxConfigBase::Get();
   if(!cfg->DeleteGroup(G_BOOKMARKS + name))
     wxLogError(_("No bookmark with this name!"));
+  else
+    cfg->Flush();
 
   // and re-read
   bookmarks_load_to_list();
